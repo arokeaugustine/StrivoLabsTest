@@ -1,0 +1,2 @@
+
+Scaffold-DbContext "Server=DESKTOP-VKI582V;Database=StrivoTest;Trusted_Connection=True;MultipleActiveResultSets=true; TrustServerCertificate=true;"  Microsoft.EntityFrameworkCore.SqlServer -OutputDir Data/Models -Force

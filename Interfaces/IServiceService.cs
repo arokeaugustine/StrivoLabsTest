@@ -6,5 +6,6 @@ namespace StrivoLabsTest.Interfaces
     public interface IServiceService
     {
         Task<Response<ServiceResponse>> CreateService(ServiceDTO data);
+        Task<Response<ServiceModel>> GetActiveService(Guid serviceId);
     }
 }

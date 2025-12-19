@@ -1,4 +1,4 @@
-﻿namespace StrivoLabsTest.Data.DTOs
+﻿namespace StrivoLabsTest.Data.DTOs.Subscription
 {
     public class SubscribersRequest
     {

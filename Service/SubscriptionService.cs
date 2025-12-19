@@ -1,5 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
 using StrivoLabsTest.Data.DTOs;
+using StrivoLabsTest.Data.DTOs.Subscription;
 using StrivoLabsTest.Data.Models;
 using StrivoLabsTest.Interfaces;
 using System.Net;
@@ -14,10 +16,9 @@ namespace StrivoLabsTest.Service
             _context = context;
         }
 
-
         public async Task<Response<string>> Subscribe(SubscribersRequest model)
         {
-            if (string.IsNullOrWhiteSpace(model.Phone_number))
+            if (!IsValidPhoneNumber(model.Phone_number))
             {
                 return new Response<string>
                 {
@@ -26,63 +27,56 @@ namespace StrivoLabsTest.Service
                     Message = "Invalid phone number"
                 };
             }
-
-            var serviceToken = await _context.ServiceTokens.FirstOrDefaultAsync(x => x.Uid == model.Token_id);
-            if (serviceToken is null)
+            var str = model.Phone_number.ToUpper();
+            var token = await ValidateTokenAsync(model.Token_id);
+            if (token == null)
             {
                 return new Response<string>
                 {
                     IsSuccess = false,
                     StatusCode = (int)HttpStatusCode.BadRequest,
-                    Message = "Invalid token"
+                    Message = "Invalid or expired token"
                 };
             }
 
-            if (serviceToken.ExpiresAt < DateTime.UtcNow)
+            var existingSubscriber = await _context.Subscribers
+                .FirstOrDefaultAsync(x =>
+                    x.PhoneNumber == model.Phone_number &&
+                    x.ServiceId == model.Service_id &&
+                    x.IsSubscribed);
+
+            if (existingSubscriber != null)
             {
                 return new Response<string>
                 {
                     IsSuccess = false,
                     StatusCode = (int)HttpStatusCode.BadRequest,
-                    Message = "token expired"
+                    Message = "user already subscribed"
                 };
             }
 
             var subscriber = new Subscriber
             {
                 ServiceId = model.Service_id,
-                SubscribedAt = DateTime.UtcNow,
-                CreatedAt = DateTime.UtcNow,
                 PhoneNumber = model.Phone_number,
-                IsSubscribed = true
+                IsSubscribed = true,
+                SubscribedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
             };
 
             await _context.Subscribers.AddAsync(subscriber);
-            var save = await _context.SaveChangesAsync();
-
-            if (save > 0)
-            {
-                return new Response<string>
-                {
-                    IsSuccess = true,
-                    StatusCode = (int)HttpStatusCode.OK,
-                    Message = "subscription successful"
-                };
-            }
-
+            await _context.SaveChangesAsync();
             return new Response<string>
             {
-                IsSuccess = false,
-                StatusCode = (int)HttpStatusCode.BadRequest,
-                Message = "unable to sunscribe"
+                IsSuccess = true,
+                StatusCode = (int)HttpStatusCode.OK,
+                Message = "subscription successful"
             };
-
         }
-
 
         public async Task<Response<string>> UnSubscribe(SubscribersRequest model)
         {
-            if (string.IsNullOrWhiteSpace(model.Phone_number))
+            if (!IsValidPhoneNumber(model.Phone_number))
             {
                 return new Response<string>
                 {
@@ -91,36 +85,31 @@ namespace StrivoLabsTest.Service
                     Message = "Invalid phone number"
                 };
             }
+ 
 
-            var serviceToken = await _context.ServiceTokens.FirstOrDefaultAsync(x => x.Uid == model.Token_id);
-            if (serviceToken is null)
+            var token = await ValidateTokenAsync(model.Token_id);
+            if (token == null)
             {
                 return new Response<string>
                 {
                     IsSuccess = false,
                     StatusCode = (int)HttpStatusCode.BadRequest,
-                    Message = "Invalid token"
+                    Message = "Invalid or expired token"
                 };
             }
 
-            if (serviceToken.ExpiresAt < DateTime.UtcNow)
-            {
-                return new Response<string>
-                {
-                    IsSuccess = false,
-                    StatusCode = (int)HttpStatusCode.BadRequest,
-                    Message = "token expired"
-                };
-            }
+            var subscriber = await _context.Subscribers
+                .FirstOrDefaultAsync(x =>
+                    x.PhoneNumber == model.Phone_number &&
+                    x.ServiceId == model.Service_id);
 
-            var subscriber = await _context.Subscribers.FirstOrDefaultAsync(x => x.PhoneNumber == model.Phone_number && x.ServiceId == model.Service_id);
             if (subscriber is null)
             {
                 return new Response<string>
                 {
                     IsSuccess = false,
                     StatusCode = (int)HttpStatusCode.BadRequest,
-                    Message = "unable to subscribe"
+                    Message = "invalid subscription"
                 };
             }
 
@@ -134,30 +123,111 @@ namespace StrivoLabsTest.Service
                 };
             }
             subscriber.IsSubscribed = false;
-            subscriber.SubscribedAt = DateTime.UtcNow;
-            
+            subscriber.UnsubscribedAt = DateTime.UtcNow;
 
-            var save = await _context.SaveChangesAsync();
-
-            if (save > 0)
+            await _context.SaveChangesAsync();
+            return new Response<string>
             {
-                return new Response<string>
+                IsSuccess = true,
+                StatusCode = (int)HttpStatusCode.OK,
+                Message = "unsubscription successful"
+            };
+        }
+
+
+
+        public async Task<Response<SubscriptionStatus>> CheckSubcriptionStatus(SubscribersRequest model)
+        {
+            if (!IsValidPhoneNumber(model.Phone_number))
+            {
+                return new Response<SubscriptionStatus>
                 {
-                    IsSuccess = true,
-                    StatusCode = (int)HttpStatusCode.OK,
-                    Message = "unsubscription successful"
+                    IsSuccess = false,
+                    StatusCode = (int)HttpStatusCode.BadRequest,
+                    Message = "Invalid phone number"
                 };
             }
 
-            return new Response<string>
-            {
-                IsSuccess = false,
-                StatusCode = (int)HttpStatusCode.BadRequest,
-                Message = "unable to sunscribe"
-            };
 
+            var token = await ValidateTokenAsync(model.Token_id);
+            if (token == null)
+            {
+                return new Response<SubscriptionStatus>
+                {
+                    IsSuccess = false,
+                    StatusCode = (int)HttpStatusCode.BadRequest,
+                    Message = "Invalid or expired token"
+                };
+            }
+
+            var subscriber = await _context.Subscribers
+                .FirstOrDefaultAsync(x =>
+                    x.PhoneNumber == model.Phone_number &&
+                    x.ServiceId == model.Service_id);
+
+            if (subscriber is null)
+            {
+                return new Response<SubscriptionStatus>
+                {
+                    IsSuccess = false,
+                    StatusCode = (int)HttpStatusCode.BadRequest,
+                    Message = "invalid subscription"
+                };
+            }
+
+            if (!subscriber.IsSubscribed)
+            {
+                return new Response<SubscriptionStatus>
+                {
+                    IsSuccess = true,
+                    StatusCode = (int)HttpStatusCode.OK,
+                    Message = "service unsubscribed",
+                    Data = new SubscriptionStatus
+                    {
+                        Status = "Unsubscribed",
+                        UnsubscribedAt = subscriber.UnsubscribedAt
+                    }
+                };
+            }
+
+            return new Response<SubscriptionStatus>
+            {
+                IsSuccess = true,
+                StatusCode = (int)HttpStatusCode.OK,
+                Message = "service subscribed",
+                Data = new SubscriptionStatus
+                {
+                    Status = "Subscribed",
+                    SubscribedAt = subscriber.SubscribedAt
+                }
+            };
         }
 
+
+        private bool IsValidPhoneNumber(string phoneNumber)
+        {
+            if (string.IsNullOrWhiteSpace(phoneNumber))
+                return false;
+
+            return phoneNumber.All(char.IsDigit) &&
+                   phoneNumber.Length >= 10 &&
+                   phoneNumber.Length <= 15;
+        }
+
+
+        private async Task<ServiceToken?> ValidateTokenAsync(Guid tokenId)
+        {
+            var token = await _context.ServiceTokens
+                .FirstOrDefaultAsync(x => x.Uid == tokenId);
+
+            if (token == null)
+                return null;
+
+            if (token.ExpiresAt < DateTime.UtcNow)
+                return null;
+
+            return token;
+        }
 
 
     }

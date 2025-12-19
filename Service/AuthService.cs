@@ -15,47 +15,30 @@ namespace StrivoLabsTest.Service
     {
         private readonly StrivoTestContext _context;
         private readonly ITokenGenerator _tokenGenerator;
-        public AuthService(StrivoTestContext context, ITokenGenerator tokenGenerator)
+        private readonly IServiceService _serviceService;
+        public AuthService(StrivoTestContext context,
+            ITokenGenerator tokenGenerator,
+            IServiceService serviceService)
         {
             _context = context;
             _tokenGenerator = tokenGenerator;
+            _serviceService = serviceService;
         }
 
 
 
         public async Task<Response<LoginResponse>> LoginAsync(LoginModel login)
         {
-            if(login == null)
+
+            var validateLogin = ValidateLogin(login);
+            if (!validateLogin.IsSuccess)
             {
-                return new Response<LoginResponse>
-                {
-                    IsSuccess = false,
-                    StatusCode = (int)HttpStatusCode.BadRequest,
-                    Message = "Invalid data"
-                };
-            }
-          
-            if (string.IsNullOrWhiteSpace(login.Password))
-            {
-                return new Response<LoginResponse>
-                {
-                    IsSuccess = false,
-                    StatusCode = (int)HttpStatusCode.BadRequest,
-                    Message = "password is required"
-                };
+                return validateLogin;
             }
 
-            var service = await _context.Services.Where(x => x.ServiceId == login.Service_Id && x.IsActive).Select(
-                x => new ServiceModel
-                {
-                    Name = x.Name,
-                    IsActive = x.IsActive,
-                    ServiceId = x.ServiceId,
-                    PasswordHash = x.PasswordHash
-                }).FirstOrDefaultAsync();
-            
+            var service = await _serviceService.GetActiveService(login.Service_Id);
 
-            if (service == null)
+            if (!service.IsSuccess)
             {
                 return new Response<LoginResponse>
                 {
@@ -65,10 +48,7 @@ namespace StrivoLabsTest.Service
                 };
             }
 
-            bool isPasswordValid = BCrypt.Net.BCrypt.Verify(
-                login.Password,
-                service.PasswordHash
-            );
+            bool isPasswordValid = BCrypt.Net.BCrypt.Verify( login.Password, service.Data.PasswordHash);
 
             if (!isPasswordValid)
             {
@@ -80,7 +60,7 @@ namespace StrivoLabsTest.Service
                 };
             }
 
-            var token = _tokenGenerator.GenerateJwtToken(service);
+            var token = _tokenGenerator.GenerateJwtToken(service.Data);
 
             if (string.IsNullOrEmpty(token.Token))
             {
@@ -93,35 +73,64 @@ namespace StrivoLabsTest.Service
             }
             var serviceToken = new ServiceToken
             {
-                ServiceId = service.ServiceId,
+                ServiceId = service.Data.ServiceId,
                 CreatedAt = token.CreatedAt,
                 ExpiresAt = token.ExpiresAt,
                 Token = token.Token,
             };
-            var saveToken = await _context.ServiceTokens.AddAsync(serviceToken);
-            var save = await _context.SaveChangesAsync();
-            if(save > 0)
+
+            return await SaveToken(service.Data, serviceToken);
+        }
+
+
+        private Response<LoginResponse> ValidateLogin(LoginModel login)
+        {
+            if (login == null)
             {
                 return new Response<LoginResponse>
                 {
-                    IsSuccess = true,
-                    StatusCode = (int)HttpStatusCode.OK,
-                    Message = "successful",
-                    Data = new LoginResponse
-                    {
-                        Token = serviceToken.Token,
-                        Name = service.Name,
-                        TokenID = serviceToken.Uid
-
-                    }
+                    IsSuccess = false,
+                    StatusCode = (int)HttpStatusCode.BadRequest,
+                    Message = "Invalid data"
                 };
             }
+
+            if (string.IsNullOrWhiteSpace(login.Password))
+            {
+                return new Response<LoginResponse>
+                {
+                    IsSuccess = false,
+                    StatusCode = (int)HttpStatusCode.BadRequest,
+                    Message = "password is required"
+                };
+            }
+            return new Response<LoginResponse>
+            {
+                IsSuccess = true,
+                StatusCode = (int)HttpStatusCode.OK,
+                Message = "success"
+            };
+
+        }
+
+        private async Task<Response<LoginResponse>> SaveToken(ServiceModel service, ServiceToken serviceToken)
+        {
+          
+            var saveToken = await _context.ServiceTokens.AddAsync(serviceToken);
+            var save = await _context.SaveChangesAsync();
 
             return new Response<LoginResponse>
             {
                 IsSuccess = true,
-                StatusCode = (int)HttpStatusCode.BadRequest,
-                Message = "an issue occured."
+                StatusCode = (int)HttpStatusCode.OK,
+                Message = "successful",
+                Data = new LoginResponse
+                {
+                    Token = serviceToken.Token,
+                    Name = service.Name,
+                    TokenID = serviceToken.Uid
+
+                }
             };
         }
     } 

@@ -87,5 +87,35 @@ namespace StrivoLabsTest.Service
 
         }
 
+
+        public async Task<Response<ServiceModel>> GetActiveService(Guid serviceId) 
+        {
+            var service = await _context.Services.Where(x => x.ServiceId == serviceId && x.IsActive).Select(
+               x => new ServiceModel
+               {
+                   Name = x.Name,
+                   IsActive = x.IsActive,
+                   ServiceId = x.ServiceId,
+                   PasswordHash = x.PasswordHash
+               }).FirstOrDefaultAsync();
+
+            if(service == null)
+            {
+                return new Response<ServiceModel>
+                {
+                    IsSuccess = false,
+                    StatusCode = (int)HttpStatusCode.BadRequest,
+                    Message = "invalid service id"
+                };
+            }
+            return new Response<ServiceModel>
+            {
+                IsSuccess = true,
+                StatusCode = (int)HttpStatusCode.OK,
+                Data = service,
+                Message = "successful"
+            };
+        }
+
     }
 }

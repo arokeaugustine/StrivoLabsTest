@@ -185,6 +185,7 @@ namespace StrivoLabsTest.Service
                     Data = new SubscriptionStatus
                     {
                         Status = "Unsubscribed",
+                        IsSubScribed = false,
                         UnsubscribedAt = subscriber.UnsubscribedAt
                     }
                 };
@@ -197,6 +198,7 @@ namespace StrivoLabsTest.Service
                 Message = "service subscribed",
                 Data = new SubscriptionStatus
                 {
+                    IsSubScribed = true,
                     Status = "Subscribed",
                     SubscribedAt = subscriber.SubscribedAt
                 }
